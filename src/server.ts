@@ -25,7 +25,7 @@ export async function startServer(): Promise<void> {
 
   const config = getServerConfig(isStdioMode);
 
-  const server = createServer(config.auth, {
+  const server = createServer({
     isHTTP: !isStdioMode,
     outputFormat: config.outputFormat,
     skipImageDownloads: config.skipImageDownloads,

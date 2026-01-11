@@ -11,9 +11,7 @@ import { Logger, writeLogs } from "~/utils/logger.js";
 import { fetchWithRetry } from "~/utils/fetch-with-retry.js";
 
 export type FigmaAuthOptions = {
-  figmaApiKey: string;
   figmaOAuthToken: string;
-  useOAuth: boolean;
 };
 
 type SvgOptions = {
@@ -23,25 +21,16 @@ type SvgOptions = {
 };
 
 export class FigmaService {
-  private readonly apiKey: string;
   private readonly oauthToken: string;
-  private readonly useOAuth: boolean;
   private readonly baseUrl = "https://api.figma.com/v1";
 
-  constructor({ figmaApiKey, figmaOAuthToken, useOAuth }: FigmaAuthOptions) {
-    this.apiKey = figmaApiKey || "";
+  constructor({ figmaOAuthToken }: FigmaAuthOptions) {
     this.oauthToken = figmaOAuthToken || "";
-    this.useOAuth = !!useOAuth && !!this.oauthToken;
   }
 
   private getAuthHeaders(): Record<string, string> {
-    if (this.useOAuth) {
-      Logger.log("Using OAuth Bearer token for authentication");
-      return { Authorization: `Bearer ${this.oauthToken}` };
-    } else {
-      Logger.log("Using Personal Access Token for authentication");
-      return { "X-Figma-Token": this.apiKey };
-    }
+    Logger.log("Using OAuth Bearer token for authentication");
+    return { Authorization: `Bearer ${this.oauthToken}` };
   }
 
   /**

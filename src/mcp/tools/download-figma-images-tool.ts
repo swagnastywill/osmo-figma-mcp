@@ -65,15 +65,25 @@ const parameters = {
     .describe(
       "The absolute path to the directory where images are stored in the project. If the directory does not exist, it will be created. The format of this path should respect the directory format of the operating system you are running on. Don't use any special character escaping in the path name either.",
     ),
+  figmaOAuthToken: z
+    .string()
+    .describe(
+      "User's Figma OAuth access token obtained via OAuth flow. Required for all requests.",
+    ),
 };
 
 const parametersSchema = z.object(parameters);
 export type DownloadImagesParams = z.infer<typeof parametersSchema>;
 
 // Enhanced handler function with image processing support
-async function downloadFigmaImages(params: DownloadImagesParams, figmaService: FigmaService) {
+async function downloadFigmaImages(params: DownloadImagesParams) {
   try {
-    const { fileKey, nodes, localPath, pngScale = 2 } = parametersSchema.parse(params);
+    const { fileKey, nodes, localPath, pngScale = 2, figmaOAuthToken } = parametersSchema.parse(params);
+
+    // Create FigmaService with the provided OAuth token (supports both OAuth and PAT)
+    const figmaService = new FigmaService({
+      figmaOAuthToken: figmaOAuthToken,
+    });
 
     // Process nodes: collect unique downloads and track which requests they satisfy
     const downloadItems = [];

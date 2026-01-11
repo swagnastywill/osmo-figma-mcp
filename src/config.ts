@@ -2,16 +2,12 @@ import { config as loadEnv } from "dotenv";
 import yargs from "yargs";
 import { hideBin } from "yargs/helpers";
 import { resolve } from "path";
-import type { FigmaAuthOptions } from "./services/figma.js";
 
 interface ServerConfig {
-  auth: FigmaAuthOptions;
   port: number;
   outputFormat: "yaml" | "json";
   skipImageDownloads?: boolean;
   configSources: {
-    figmaApiKey: "cli" | "env";
-    figmaOAuthToken: "cli" | "env" | "none";
     port: "cli" | "env" | "default";
     outputFormat: "cli" | "env" | "default";
     envFile: "cli" | "default";
@@ -19,14 +15,8 @@ interface ServerConfig {
   };
 }
 
-function maskApiKey(key: string): string {
-  if (!key || key.length <= 4) return "****";
-  return `****${key.slice(-4)}`;
-}
 
 interface CliArgs {
-  "figma-api-key"?: string;
-  "figma-oauth-token"?: string;
   env?: string;
   port?: number;
   json?: boolean;
@@ -37,14 +27,6 @@ export function getServerConfig(isStdioMode: boolean): ServerConfig {
   // Parse command line arguments
   const argv = yargs(hideBin(process.argv))
     .options({
-      "figma-api-key": {
-        type: "string",
-        description: "Figma API key (Personal Access Token)",
-      },
-      "figma-oauth-token": {
-        type: "string",
-        description: "Figma OAuth Bearer token",
-      },
       env: {
         type: "string",
         description: "Path to custom .env file to load environment variables from",
@@ -83,45 +65,17 @@ export function getServerConfig(isStdioMode: boolean): ServerConfig {
   // Override anything auto-loaded from .env if a custom file is provided.
   loadEnv({ path: envFilePath, override: true });
 
-  const auth: FigmaAuthOptions = {
-    figmaApiKey: "",
-    figmaOAuthToken: "",
-    useOAuth: false,
-  };
-
-  const config: Omit<ServerConfig, "auth"> = {
+  const config: ServerConfig = {
     port: 3333,
-    outputFormat: "yaml",
+    outputFormat: "json",
     skipImageDownloads: false,
     configSources: {
-      figmaApiKey: "env",
-      figmaOAuthToken: "none",
       port: "default",
       outputFormat: "default",
       envFile: envFileSource,
       skipImageDownloads: "default",
     },
   };
-
-  // Handle FIGMA_API_KEY
-  if (argv["figma-api-key"]) {
-    auth.figmaApiKey = argv["figma-api-key"];
-    config.configSources.figmaApiKey = "cli";
-  } else if (process.env.FIGMA_API_KEY) {
-    auth.figmaApiKey = process.env.FIGMA_API_KEY;
-    config.configSources.figmaApiKey = "env";
-  }
-
-  // Handle FIGMA_OAUTH_TOKEN
-  if (argv["figma-oauth-token"]) {
-    auth.figmaOAuthToken = argv["figma-oauth-token"];
-    config.configSources.figmaOAuthToken = "cli";
-    auth.useOAuth = true;
-  } else if (process.env.FIGMA_OAUTH_TOKEN) {
-    auth.figmaOAuthToken = process.env.FIGMA_OAUTH_TOKEN;
-    config.configSources.figmaOAuthToken = "env";
-    auth.useOAuth = true;
-  }
 
   // Handle PORT
   if (argv.port) {
@@ -150,29 +104,10 @@ export function getServerConfig(isStdioMode: boolean): ServerConfig {
     config.configSources.skipImageDownloads = "env";
   }
 
-  // Validate configuration
-  if (!auth.figmaApiKey && !auth.figmaOAuthToken) {
-    console.error(
-      "Either FIGMA_API_KEY or FIGMA_OAUTH_TOKEN is required (via CLI argument or .env file)",
-    );
-    process.exit(1);
-  }
-
   // Log configuration sources
   if (!isStdioMode) {
-    console.log("\nConfiguration:");
+    console.log("\nFigma MCP Server Configuration:");
     console.log(`- ENV_FILE: ${envFilePath} (source: ${config.configSources.envFile})`);
-    if (auth.useOAuth) {
-      console.log(
-        `- FIGMA_OAUTH_TOKEN: ${maskApiKey(auth.figmaOAuthToken)} (source: ${config.configSources.figmaOAuthToken})`,
-      );
-      console.log("- Authentication Method: OAuth Bearer Token");
-    } else {
-      console.log(
-        `- FIGMA_API_KEY: ${maskApiKey(auth.figmaApiKey)} (source: ${config.configSources.figmaApiKey})`,
-      );
-      console.log("- Authentication Method: Personal Access Token (X-Figma-Token)");
-    }
     console.log(`- PORT: ${config.port} (source: ${config.configSources.port})`);
     console.log(
       `- OUTPUT_FORMAT: ${config.outputFormat} (source: ${config.configSources.outputFormat})`,
@@ -180,11 +115,9 @@ export function getServerConfig(isStdioMode: boolean): ServerConfig {
     console.log(
       `- SKIP_IMAGE_DOWNLOADS: ${config.skipImageDownloads} (source: ${config.configSources.skipImageDownloads})`,
     );
+    console.log("\n⚠️  Authentication: All requests must include figmaOAuthToken parameter");
     console.log(); // Empty line for better readability
   }
 
-  return {
-    ...config,
-    auth,
-  };
+  return config;
 }
