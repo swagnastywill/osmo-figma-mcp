@@ -15,7 +15,6 @@ interface ServerConfig {
   };
 }
 
-
 interface CliArgs {
   env?: string;
   port?: number;
