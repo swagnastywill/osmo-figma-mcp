@@ -126,6 +126,7 @@ export class FigmaService {
    * - PNG vs SVG format (based on filename extension)
    * - Image cropping based on transform matrices
    * - CSS variable generation for image dimensions
+   * - S3 upload (optional)
    *
    * @returns Array of local file paths for successfully downloaded images
    */
@@ -140,7 +141,12 @@ export class FigmaService {
       cropTransform?: any;
       requiresImageDimensions?: boolean;
     }>,
-    options: { pngScale?: number; svgOptions?: SvgOptions } = {},
+    options: {
+      pngScale?: number;
+      svgOptions?: SvgOptions;
+      uploadToS3?: boolean;
+      s3Config?: import("../utils/s3-upload.js").S3Config;
+    } = {},
   ): Promise<ImageProcessingResult[]> {
     if (items.length === 0) return [];
 
@@ -150,7 +156,7 @@ export class FigmaService {
       throw new Error("Invalid path specified. Directory traversal is not allowed.");
     }
 
-    const { pngScale = 2, svgOptions } = options;
+    const { pngScale = 2, svgOptions, uploadToS3 = false, s3Config } = options;
     const downloadPromises: Promise<ImageProcessingResult[]>[] = [];
 
     // Separate items by type
@@ -175,6 +181,8 @@ export class FigmaService {
                 needsCropping,
                 cropTransform,
                 requiresImageDimensions,
+                uploadToS3,
+                s3Config,
               )
             : null;
         })
@@ -209,6 +217,8 @@ export class FigmaService {
                   needsCropping,
                   cropTransform,
                   requiresImageDimensions,
+                  uploadToS3,
+                  s3Config,
                 )
               : null;
           })
@@ -238,6 +248,8 @@ export class FigmaService {
                   needsCropping,
                   cropTransform,
                   requiresImageDimensions,
+                  uploadToS3,
+                  s3Config,
                 )
               : null;
           })

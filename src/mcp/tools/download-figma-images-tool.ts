@@ -70,6 +70,13 @@ const parameters = {
     .describe(
       "User's Figma OAuth access token obtained via OAuth flow. Required for all requests.",
     ),
+  uploadToS3: z
+    .boolean()
+    .optional()
+    .default(false)
+    .describe(
+      "Whether to upload images to S3 after downloading and processing. If true, S3 URLs will be included in the response. Requires AWS environment variables to be set.",
+    ),
 };
 
 const parametersSchema = z.object(parameters);
@@ -78,7 +85,8 @@ export type DownloadImagesParams = z.infer<typeof parametersSchema>;
 // Enhanced handler function with image processing support
 async function downloadFigmaImages(params: DownloadImagesParams) {
   try {
-    const { fileKey, nodes, localPath, pngScale = 2, figmaOAuthToken } = parametersSchema.parse(params);
+    const { fileKey, nodes, localPath, pngScale = 2, figmaOAuthToken, uploadToS3 = false } =
+      parametersSchema.parse(params);
 
     // Create FigmaService with the provided OAuth token (supports both OAuth and PAT)
     const figmaService = new FigmaService({
@@ -142,8 +150,22 @@ async function downloadFigmaImages(params: DownloadImagesParams) {
       }
     }
 
+    // Get S3 config if upload is requested
+    let s3Config: import("../../utils/s3-upload.js").S3Config | undefined;
+    if (uploadToS3) {
+      const { getS3ConfigFromEnv } = await import("../../utils/s3-upload.js");
+      s3Config = getS3ConfigFromEnv() ?? undefined;
+      if (!s3Config) {
+        Logger.log(
+          "Warning: uploadToS3=true but S3 environment variables not configured. Skipping S3 upload.",
+        );
+      }
+    }
+
     const allDownloads = await figmaService.downloadImages(fileKey, localPath, downloadItems, {
       pngScale,
+      uploadToS3: uploadToS3 && !!s3Config,
+      s3Config,
     });
 
     const successCount = allDownloads.filter(Boolean).length;
@@ -166,15 +188,19 @@ async function downloadFigmaImages(params: DownloadImagesParams) {
             ? ` (also requested as: ${requestedNames.filter((name: string) => name !== fileName).join(", ")})`
             : "";
 
-        return `- ${fileName}: ${dimensionInfo}${cropStatus}${aliasText}`;
+        // Include S3 URL if available
+        const s3Info = result.s3Url ? `\n  S3 URL: ${result.s3Url}` : "";
+
+        return `- ${fileName}: ${dimensionInfo}${cropStatus}${aliasText}${s3Info}`;
       })
       .join("\n");
 
+    const locationSummary = uploadToS3 && s3Config ? " to S3" : "";
     return {
       content: [
         {
           type: "text" as const,
-          text: `Downloaded ${successCount} images:\n${imagesList}`,
+          text: `Downloaded ${successCount} images${locationSummary}:\n${imagesList}`,
         },
       ],
     };
@@ -196,7 +222,9 @@ async function downloadFigmaImages(params: DownloadImagesParams) {
 export const downloadFigmaImagesTool = {
   name: "download_figma_images",
   description:
-    "Download SVG and PNG images used in a Figma file based on the IDs of image or icon nodes",
+    "Download SVG and PNG images used in a Figma file based on the IDs of image or icon nodes. " +
+    "Optionally upload to S3 by setting uploadToS3=true (requires AWS environment variables: " +
+    "AWS_REGION, AWS_BUCKET_NAME, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY)",
   parameters,
   handler: downloadFigmaImages,
 } as const;

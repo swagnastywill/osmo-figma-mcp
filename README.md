@@ -55,6 +55,26 @@ This MCP server is specifically designed for use with Cursor. Before responding 
 
 Reducing the amount of context provided to the model helps make the AI more accurate and the responses more relevant.
 
+## S3 Upload Support
+
+The server can now upload downloaded Figma images directly to S3, making them immediately accessible via public URLs. This is useful when integrating with web applications that need persistent image storage.
+
+**Features:**
+- Automatic upload to S3 after image processing (cropping, etc.)
+- Public-read ACL for immediate access
+- Returns both local paths and S3 URLs
+- Backward compatible (S3 upload is optional)
+
+To enable S3 uploads, set these environment variables:
+```bash
+AWS_REGION=us-east-1
+AWS_BUCKET_NAME=your-bucket-name
+AWS_ACCESS_KEY_ID=your-access-key
+AWS_SECRET_ACCESS_KEY=your-secret-key
+```
+
+Then use `uploadToS3: true` when calling the `download_figma_images` tool. See [S3_SETUP.md](S3_SETUP.md) for detailed configuration.
+
 ## Getting Started
 
 Many code editors and other AI clients use a configuration file to manage MCP servers.

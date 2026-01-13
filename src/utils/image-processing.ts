@@ -119,6 +119,8 @@ export type ImageProcessingResult = {
   cropRegion?: { left: number; top: number; width: number; height: number };
   cssVariables?: string;
   processingLog: string[];
+  s3Url?: string;
+  s3Key?: string;
 };
 
 /**
@@ -129,6 +131,8 @@ export type ImageProcessingResult = {
  * @param needsCropping - Whether to apply crop transform
  * @param cropTransform - Transform matrix for cropping
  * @param requiresImageDimensions - Whether to generate dimension metadata
+ * @param uploadToS3 - Whether to upload to S3 after processing
+ * @param s3Config - S3 configuration (required if uploadToS3 is true)
  * @returns Promise<ImageProcessingResult> - Detailed processing information
  */
 export async function downloadAndProcessImage(
@@ -138,6 +142,8 @@ export async function downloadAndProcessImage(
   needsCropping: boolean = false,
   cropTransform?: Transform,
   requiresImageDimensions: boolean = false,
+  uploadToS3: boolean = false,
+  s3Config?: import("./s3-upload.js").S3Config,
 ): Promise<ImageProcessingResult> {
   const { Logger } = await import("./logger.js");
   const processingLog: string[] = [];
@@ -196,6 +202,22 @@ export async function downloadAndProcessImage(
     cssVariables = generateImageCSSVariables(finalDimensions);
   }
 
+  // Upload to S3 if requested
+  let s3Url: string | undefined;
+  let s3Key: string | undefined;
+  if (uploadToS3 && s3Config) {
+    try {
+      const { uploadFileToS3 } = await import("./s3-upload.js");
+      const s3Result = await uploadFileToS3(finalPath, s3Config);
+      s3Url = s3Result.url;
+      s3Key = s3Result.key;
+      Logger.log(`Uploaded to S3: ${s3Url}`);
+    } catch (error) {
+      Logger.error("Failed to upload to S3:", error);
+      // Continue without S3 upload - not a fatal error
+    }
+  }
+
   return {
     filePath: finalPath,
     originalDimensions,
@@ -204,6 +226,8 @@ export async function downloadAndProcessImage(
     cropRegion,
     cssVariables,
     processingLog,
+    s3Url,
+    s3Key,
   };
 }
 
