@@ -212,6 +212,15 @@ export async function downloadAndProcessImage(
       s3Url = s3Result.url;
       s3Key = s3Result.key;
       Logger.log(`Uploaded to S3: ${s3Url}`);
+      
+      // Clean up local file after successful S3 upload
+      try {
+        const fs = await import("fs");
+        fs.unlinkSync(finalPath);
+        Logger.log(`Cleaned up local file: ${finalPath}`);
+      } catch (cleanupError) {
+        Logger.log(`Note: Could not delete local file ${finalPath} (may not exist)`);
+      }
     } catch (error) {
       Logger.error("Failed to upload to S3:", error);
       // Continue without S3 upload - not a fatal error
