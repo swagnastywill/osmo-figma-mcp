@@ -124,16 +124,16 @@ export type ImageProcessingResult = {
 };
 
 /**
- * Enhanced image download with post-processing
+ * Enhanced image download with post-processing and S3 upload
  * @param fileName - The filename to save as
- * @param localPath - The local path to save to
- * @param imageUrl - Image URL
+ * @param localPath - The local temporary path (typically /tmp)
+ * @param imageUrl - Image URL from Figma
  * @param needsCropping - Whether to apply crop transform
  * @param cropTransform - Transform matrix for cropping
  * @param requiresImageDimensions - Whether to generate dimension metadata
- * @param uploadToS3 - Whether to upload to S3 after processing
- * @param s3Config - S3 configuration (required if uploadToS3 is true)
- * @returns Promise<ImageProcessingResult> - Detailed processing information
+ * @param uploadToS3 - Whether to upload to S3 after processing (always true)
+ * @param s3Config - S3 configuration (required)
+ * @returns Promise<ImageProcessingResult> - Detailed processing information including S3 URL
  */
 export async function downloadAndProcessImage(
   fileName: string,
@@ -142,7 +142,7 @@ export async function downloadAndProcessImage(
   needsCropping: boolean = false,
   cropTransform?: Transform,
   requiresImageDimensions: boolean = false,
-  uploadToS3: boolean = false,
+  uploadToS3: boolean = true,
   s3Config?: import("./s3-upload.js").S3Config,
 ): Promise<ImageProcessingResult> {
   const { Logger } = await import("./logger.js");
@@ -202,7 +202,7 @@ export async function downloadAndProcessImage(
     cssVariables = generateImageCSSVariables(finalDimensions);
   }
 
-  // Upload to S3 if requested
+  // Upload to S3 (always enabled)
   let s3Url: string | undefined;
   let s3Key: string | undefined;
   if (uploadToS3 && s3Config) {
@@ -223,12 +223,14 @@ export async function downloadAndProcessImage(
       }
     } catch (error) {
       Logger.error("Failed to upload to S3:", error);
-      // Continue without S3 upload - not a fatal error
+      throw new Error(`S3 upload failed: ${error instanceof Error ? error.message : String(error)}`);
     }
+  } else if (uploadToS3 && !s3Config) {
+    throw new Error("S3 upload requested but S3 configuration not provided");
   }
 
   return {
-    filePath: finalPath,
+    filePath: s3Url || finalPath, // Return S3 URL if uploaded, otherwise local path
     originalDimensions,
     finalDimensions,
     wasCropped,

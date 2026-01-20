@@ -60,22 +60,10 @@ const parameters = {
     .describe(
       "Export scale for PNG images. Optional, defaults to 2 if not specified. Affects PNG images only.",
     ),
-  localPath: z
-    .string()
-    .describe(
-      "The absolute path to the directory where images are stored in the project. If the directory does not exist, it will be created. The format of this path should respect the directory format of the operating system you are running on. Don't use any special character escaping in the path name either.",
-    ),
   figmaOAuthToken: z
     .string()
     .describe(
       "User's Figma OAuth access token obtained via OAuth flow. Required for all requests.",
-    ),
-  uploadToS3: z
-    .boolean()
-    .optional()
-    .default(false)
-    .describe(
-      "Whether to upload images to S3 after downloading and processing. If true, S3 URLs will be included in the response. Requires AWS environment variables to be set.",
     ),
 };
 
@@ -85,8 +73,17 @@ export type DownloadImagesParams = z.infer<typeof parametersSchema>;
 // Enhanced handler function with image processing support
 async function downloadFigmaImages(params: DownloadImagesParams) {
   try {
-    const { fileKey, nodes, localPath, pngScale = 2, figmaOAuthToken, uploadToS3 = false } =
-      parametersSchema.parse(params);
+    const { fileKey, nodes, pngScale = 2, figmaOAuthToken } = parametersSchema.parse(params);
+
+    // Get S3 config from environment - REQUIRED
+    const { getS3ConfigFromEnv } = await import("../../utils/s3-upload.js");
+    const s3Config = getS3ConfigFromEnv();
+
+    if (!s3Config) {
+      throw new Error(
+        "S3 configuration not found. Required environment variables: AWS_REGION, AWS_BUCKET_NAME, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY",
+      );
+    }
 
     // Create FigmaService with the provided OAuth token (supports both OAuth and PAT)
     const figmaService = new FigmaService({
@@ -150,27 +147,18 @@ async function downloadFigmaImages(params: DownloadImagesParams) {
       }
     }
 
-    // Get S3 config if upload is requested
-    let s3Config: import("../../utils/s3-upload.js").S3Config | undefined;
-    if (uploadToS3) {
-      const { getS3ConfigFromEnv } = await import("../../utils/s3-upload.js");
-      s3Config = getS3ConfigFromEnv() ?? undefined;
-      if (!s3Config) {
-        Logger.log(
-          "Warning: uploadToS3=true but S3 environment variables not configured. Skipping S3 upload.",
-        );
-      }
-    }
+    // Use temp directory relative to current working directory
+    const tempPath = "./temp-figma-images";
 
-    const allDownloads = await figmaService.downloadImages(fileKey, localPath, downloadItems, {
+    const allDownloads = await figmaService.downloadImages(fileKey, tempPath, downloadItems, {
       pngScale,
-      uploadToS3: uploadToS3 && !!s3Config,
+      uploadToS3: true,
       s3Config,
     });
 
     const successCount = allDownloads.filter(Boolean).length;
 
-    // Format results with aliases
+    // Format results with S3 URLs
     const imagesList = allDownloads
       .map((result, index) => {
         const fileName = result.filePath.split("/").pop() || result.filePath;
@@ -188,19 +176,18 @@ async function downloadFigmaImages(params: DownloadImagesParams) {
             ? ` (also requested as: ${requestedNames.filter((name: string) => name !== fileName).join(", ")})`
             : "";
 
-        // Include S3 URL if available
+        // S3 URL is always present now
         const s3Info = result.s3Url ? `\n  S3 URL: ${result.s3Url}` : "";
 
         return `- ${fileName}: ${dimensionInfo}${cropStatus}${aliasText}${s3Info}`;
       })
       .join("\n");
 
-    const locationSummary = uploadToS3 && s3Config ? " to S3" : "";
     return {
       content: [
         {
           type: "text" as const,
-          text: `Downloaded ${successCount} images${locationSummary}:\n${imagesList}`,
+          text: `Uploaded ${successCount} images to S3:\n${imagesList}`,
         },
       ],
     };
@@ -222,9 +209,7 @@ async function downloadFigmaImages(params: DownloadImagesParams) {
 export const downloadFigmaImagesTool = {
   name: "download_figma_images",
   description:
-    "Download SVG and PNG images used in a Figma file based on the IDs of image or icon nodes. " +
-    "Optionally upload to S3 by setting uploadToS3=true (requires AWS environment variables: " +
-    "AWS_REGION, AWS_BUCKET_NAME, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY)",
+    "Download SVG and PNG images from Figma and automatically upload them to S3. Returns public S3 URLs for immediate use in your application. Images are processed (cropped if needed) and temporary files are cleaned up automatically.",
   parameters,
   handler: downloadFigmaImages,
 } as const;

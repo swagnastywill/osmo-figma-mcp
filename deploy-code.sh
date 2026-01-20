@@ -25,25 +25,42 @@ tar -czf /tmp/mcp-server.tar.gz \
     pnpm-lock.yaml \
     .env
 
-# Copy to server
+# Copy to server (detect username)
 echo "Copying files to EC2..."
+# Try ubuntu first, fallback to ec2-user
+if ssh -i ~/.ssh/${KEY_NAME}.pem -o StrictHostKeyChecking=no -o ConnectTimeout=5 ubuntu@${PUBLIC_IP} 'echo ok' &>/dev/null; then
+    EC2_USER="ubuntu"
+else
+    EC2_USER="ec2-user"
+fi
+echo "Using username: ${EC2_USER}"
+
 scp -i ~/.ssh/${KEY_NAME}.pem \
     -o StrictHostKeyChecking=no \
     /tmp/mcp-server.tar.gz \
-    ec2-user@${PUBLIC_IP}:~/
+    ${EC2_USER}@${PUBLIC_IP}:~/
 
 # Install and configure
 echo ""
 echo "Installing on EC2..."
 ssh -i ~/.ssh/${KEY_NAME}.pem \
     -o StrictHostKeyChecking=no \
-    ec2-user@${PUBLIC_IP} << 'SSHEOF'
+    ${EC2_USER}@${PUBLIC_IP} << 'SSHEOF'
 
 # Update system and install Node.js
 echo "Installing Node.js..."
-sudo dnf update -y
-curl -fsSL https://rpm.nodesource.com/setup_20.x | sudo bash -
-sudo dnf install -y nodejs
+# Detect OS and install accordingly
+if [ -f /etc/debian_version ]; then
+    # Ubuntu/Debian
+    sudo apt-get update -y
+    curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+    sudo apt-get install -y nodejs
+else
+    # Amazon Linux
+    sudo dnf update -y
+    curl -fsSL https://rpm.nodesource.com/setup_20.x | sudo bash -
+    sudo dnf install -y nodejs
+fi
 
 # Install pnpm
 sudo npm install -g pnpm
@@ -62,13 +79,14 @@ After=network.target
 
 [Service]
 Type=simple
-User=ec2-user
-WorkingDirectory=/home/ec2-user
+User=$(whoami)
+WorkingDirectory=$(pwd)
 ExecStart=/usr/bin/node dist/bin.js
 Restart=always
 RestartSec=10
 Environment=NODE_ENV=production
 Environment=PORT=3333
+EnvironmentFile=$(pwd)/.env
 
 [Install]
 WantedBy=multi-user.target

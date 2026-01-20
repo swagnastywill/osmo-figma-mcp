@@ -60,7 +60,7 @@ export async function uploadFileToS3(
       },
     });
 
-    // Create presigned URL for upload
+    // Create presigned URL for upload with public-read ACL (matching ai-motion-designer)
     const command = new PutObjectCommand({
       Bucket: config.bucketName,
       Key: fileKey,
