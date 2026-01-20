@@ -115,7 +115,7 @@ async function getFigmaData(
 export const getFigmaDataTool = {
   name: "get_figma_data",
   description:
-    "Get comprehensive Figma file data including layout, content, visuals, and component information",
+    "Fetch Figma design data in structured JSON format. Returns a comprehensive tree of all nodes (frames, text, images, etc.) with their properties (layout, colors, fonts, dimensions). Output includes: (1) 'nodes' array with the design hierarchy, (2) 'globalVars' object containing reusable styles/colors/layouts, (3) 'metadata' with file info. Use this as the FIRST step before downloading images. The returned data contains IMAGE-SVG nodes (vector graphics) and IMAGE nodes with 'imageRef' (raster images like photos) that can be extracted and passed to download_figma_images tool for S3 upload.",
   parameters,
   handler: getFigmaData,
 } as const;

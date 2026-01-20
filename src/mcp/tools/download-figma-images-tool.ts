@@ -15,12 +15,12 @@ const parameters = {
           /^I?\d+[:|-]\d+(?:;\d+[:|-]\d+)*$/,
           "Node ID must be like '1234:5678' or 'I5666:180910;1:10515;1:10336'",
         )
-        .describe("The ID of the Figma image node to fetch, formatted as 1234:5678"),
+        .describe("The ID of the Figma image node from get_figma_data output (found in node.id field). Format: '1234:5678' or with hyphens '1234-5678'."),
       imageRef: z
         .string()
         .optional()
         .describe(
-          "If a node has an imageRef fill, you must include this variable. Leave blank when downloading Vector SVG images.",
+          "REQUIRED for raster images (type='IMAGE'): The imageRef property from the node's fills array or imageRef field. OMIT for vector images (type='IMAGE-SVG'). This hash identifies the actual image asset in Figma.",
         ),
       fileName: z
         .string()
@@ -29,29 +29,29 @@ const parameters = {
           "File names must contain only letters, numbers, underscores, dots, or hyphens, and end with .png or .svg.",
         )
         .describe(
-          "The local name for saving the fetched file, including extension. Either png or svg.",
+          "Desired filename for the uploaded S3 file. Use .svg for IMAGE-SVG nodes, .png for IMAGE nodes. Recommend format: 'type-nodeId.ext' (e.g., 'svg-195-3012.svg' or 'image-195-3184.png') to ensure uniqueness.",
         ),
       needsCropping: z
         .boolean()
         .optional()
-        .describe("Whether this image needs cropping based on its transform matrix"),
+        .describe("Set to true if the image has transforms/cropping in Figma. Found in node.imageDownloadArguments.needsCropping from get_figma_data output. Default: false."),
       cropTransform: z
         .array(z.array(z.number()))
         .optional()
-        .describe("Figma transform matrix for image cropping"),
+        .describe("Transformation matrix for cropping. Copy from node.imageDownloadArguments.cropTransform in get_figma_data output. Only needed if needsCropping=true. Format: [[a,b,c],[d,e,f]] where each inner array is a row of the 2x3 matrix."),
       requiresImageDimensions: z
         .boolean()
         .optional()
-        .describe("Whether this image requires dimension information for CSS variables"),
+        .describe("Set to true if you need width/height as CSS variables. Found in node.imageDownloadArguments.requiresImageDimensions. Default: false."),
       filenameSuffix: z
         .string()
         .optional()
         .describe(
-          "Suffix to add to filename for unique cropped images, provided in the Figma data (e.g., 'abc123')",
+          "Unique suffix for this specific crop/variant of an image. Copy from node.imageDownloadArguments.filenameSuffix in get_figma_data output. Used when multiple nodes reference the same imageRef but with different crops. Format: 6-char hex string (e.g., '157bc8').",
         ),
     })
     .array()
-    .describe("The nodes to fetch as images"),
+    .describe("Array of image nodes to download and upload to S3. Extract these from get_figma_data output by finding nodes with type='IMAGE-SVG' (vector) or type='IMAGE' (raster). Each entry should include the nodeId, appropriate fileName, and for raster images the imageRef. Include imageDownloadArguments properties (needsCropping, cropTransform, filenameSuffix) when present."),
   pngScale: z
     .number()
     .positive()
@@ -209,7 +209,7 @@ async function downloadFigmaImages(params: DownloadImagesParams) {
 export const downloadFigmaImagesTool = {
   name: "download_figma_images",
   description:
-    "Download SVG and PNG images from Figma and automatically upload them to S3. Returns public S3 URLs for immediate use in your application. Images are processed (cropped if needed) and temporary files are cleaned up automatically.",
+    "Download and upload Figma images to S3 in bulk, returning public URLs. Call this AFTER get_figma_data to process extracted images. Handles two image types: (1) IMAGE-SVG nodes (vector graphics - no imageRef needed), (2) IMAGE nodes with imageRef (raster images like photos - imageRef REQUIRED). The tool downloads images, applies cropping transforms if needed, uploads to S3 with public access, and returns the S3 URLs. Use the imageDownloadArguments from get_figma_data output to populate needsCropping, cropTransform, and filenameSuffix parameters for each image. Temporary files are automatically cleaned up.",
   parameters,
   handler: downloadFigmaImages,
 } as const;
