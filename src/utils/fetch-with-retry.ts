@@ -20,11 +20,53 @@ export async function fetchWithRetry<T extends { status?: number }>(
   try {
     const response = await fetch(url, options);
 
+    if (response.status === 429) {
+      const retryAfter = response.headers.get("Retry-After");
+      const planTier = response.headers.get("X-Figma-Plan-Tier");
+      const rateLimitType = response.headers.get("X-Figma-Rate-Limit-Type");
+      const upgradeLink = response.headers.get("X-Figma-Upgrade-Link");
+
+      Logger.error(
+        `[fetchWithRetry] Figma API rate limit hit (429) for ${url}. ` +
+          `Retry-After: ${retryAfter ?? "not provided"}, ` +
+          `Plan-Tier: ${planTier ?? "not provided"}, ` +
+          `Rate-Limit-Type: ${rateLimitType ?? "not provided"}, ` +
+          `Upgrade-Link: ${upgradeLink ?? "not provided"}`,
+      );
+
+      const parts: string[] = [];
+
+      if (retryAfter) {
+        const seconds = parseInt(retryAfter, 10);
+        parts.push(`Figma API rate limit reached. Try again in ${formatDuration(seconds)}.`);
+      } else {
+        parts.push("Figma API rate limit reached. Wait a moment before retrying.");
+      }
+
+      if (planTier || rateLimitType) {
+        const tierInfo: string[] = [];
+        if (planTier) tierInfo.push(`Current plan: ${planTier}`);
+        if (rateLimitType) tierInfo.push(`Seat type: ${formatSeatType(rateLimitType)}`);
+        parts.push(tierInfo.join(" | "));
+      }
+
+      if (upgradeLink) {
+        parts.push(`Increase your rate limit: ${upgradeLink}`);
+      }
+
+      throw new Error(parts.join("\n"));
+    }
+
     if (!response.ok) {
       throw new Error(`Fetch failed with status ${response.status}: ${response.statusText}`);
     }
     return (await response.json()) as T;
   } catch (fetchError: any) {
+    // 429 errors should not fall through to curl — it will just get rate-limited too
+    if (fetchError.message?.includes("Figma API rate limit reached")) {
+      throw fetchError;
+    }
+
     Logger.log(
       `[fetchWithRetry] Initial fetch failed for ${url}: ${fetchError.message}. Likely a corporate proxy or SSL issue. Attempting curl fallback.`,
     );
@@ -78,6 +120,30 @@ export async function fetchWithRetry<T extends { status?: number }>(
       throw fetchError;
     }
   }
+}
+
+function formatDuration(totalSeconds: number): string {
+  if (isNaN(totalSeconds) || totalSeconds <= 0) return "a few seconds";
+
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+
+  const parts: string[] = [];
+  if (hours > 0) parts.push(`${hours} hour${hours !== 1 ? "s" : ""}`);
+  if (minutes > 0) parts.push(`${minutes} minute${minutes !== 1 ? "s" : ""}`);
+  if (seconds > 0) parts.push(`${seconds} second${seconds !== 1 ? "s" : ""}`);
+
+  return parts.join(" ") || "a few seconds";
+}
+
+const SEAT_TYPE_MAP: Record<string, string> = {
+  high: "Full Design/Dev",
+  low: "View/Collab",
+};
+
+function formatSeatType(rateLimitType: string): string {
+  return SEAT_TYPE_MAP[rateLimitType.toLowerCase()] ?? rateLimitType;
 }
 
 /**
